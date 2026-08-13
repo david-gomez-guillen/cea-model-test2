@@ -38,6 +38,12 @@ S.CE <- 9; S.CL <- 10; S.SURV <- 11; S.DCRC <- 12; S.DOTH <- 13
 S.AT.RISK <- c(S.NORMAL, S.LRA, S.AA, S.SSL, S.PEC, S.PLC, S.PES, S.PLS)
 S.LESION <- c(S.LRA, S.AA, S.SSL)
 
+# Artificial delay, in seconds, applied once per simulate() call. The model
+# itself runs in a few milliseconds, which is unrealistically fast for anything
+# that has to cope with a slow model (progress reporting, calibration budgets);
+# this makes a run take a plausible amount of time. Set to 0 to disable.
+MODEL.SIMULATION.DELAY <- 3
+
 # Screening schedules, as the ages at which a round is offered.
 SCREENING.SCHEDULES <- list(
   no_screening = list(test = NULL, ages = integer(0)),
@@ -389,7 +395,11 @@ apply.screening <- function(cohort, test, p) {
        found.late = found.late)
 }
 
-simulate <- function(strategies, pars) {
+simulate <- function(strategies, pars, delay = MODEL.SIMULATION.DELAY) {
+  if (is.numeric(delay) && length(delay) == 1 && !is.na(delay) && delay > 0) {
+    Sys.sleep(delay)
+  }
+
   ages <- seq(MODEL.AGE.START, MODEL.AGE.END)
   n.states <- length(MODEL.STATES)
 
