@@ -153,20 +153,19 @@ be handed a longer vector than it consumes.
 The calibration vector is laid out parameter by parameter and, within a
 parameter, stratum by stratum: the order the app builds its initial guess in
 (`unlist(calib.pars[scheme$parameters])`), reports the calibrated values in and
-shows them in the Parameters tab. Note that `calib.vector.to.pars()` in
-`R/shiny_calibration.R` reads it the other way round, stratum by stratum. The
-two orders coincide for a scheme that calibrates a single parameter, which is
-what the app has been used with so far, but not for the schemes here: without
-the loops in that function swapped, the values land on the wrong parameters and
-the search box on each of them comes from the wrong base value.
+shows them in the Parameters tab. `calib.vector.to.pars()` in
+`R/shiny_calibration.R` reads it back in that same order, and the constraints of
+the `constrained` scheme index it the same way.
 
 The error is the mean squared *relative* deviation within each series, summed
 over the three series. The series are on very different scales (incidence is per
 mil, the other two are proportions), so a scale-free error is what makes all
 three count.
 
-The `constrained` scheme adds `vector_to_pars` and `constraints` for the
-constrained BO wrappers. Feasible parameter sets are non-decreasing in age for
+The `constrained` scheme adds a `constraints` function, evaluated on the raw
+calibration vector, for the constrained BO wrappers, and a `constraints_llm`
+function stating the same thing in words for the agentic wrapper, which appends
+it to the agent's system prompt. Feasible parameter sets are non-decreasing in age for
 all three parameters and keep total serrated onset below 35% of total adenoma
 onset; its training set generator only produces feasible rows.
 

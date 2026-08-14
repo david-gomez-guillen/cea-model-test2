@@ -98,12 +98,7 @@ CALIB.TARGET <- list(
 # The calibration vector is laid out parameter by parameter, and within a
 # parameter stratum by stratum. That is the order the app builds its initial
 # guess in and the order the calibrated values are reported in, so the initial
-# guess and vector_to_pars() below follow it.
-#
-# Note that calib.vector.to.pars() in the app reads the vector the other way
-# round, stratum by stratum. The two orders coincide when a scheme calibrates a
-# single parameter, which is the case in the models the app has been used with
-# so far, but not here. See overview.md.
+# guess below and the constraints on the vector follow it too.
 initial.guess.for <- function(params) {
   base <- default.parameters()
   unname(unlist(lapply(params, function(param) {
@@ -124,9 +119,6 @@ get.calibration.schemes <- function() {
       initial_guess=initial.guess.for(CALIB.PARAMS.FULL),
       error_function=calibration.error,
       latent_space_training_set=generate.training.dataset,
-      latent_space_training_set_size=500,
-      latent_space_training_epochs=50,
-      latent_space_latent_dim=7,
       other.plots=list(plot.pathway.split)
     ),
     pathway_mix=list(
@@ -137,9 +129,6 @@ get.calibration.schemes <- function() {
       initial_guess=initial.guess.for(CALIB.PARAMS.CORE),
       error_function=calibration.error,
       latent_space_training_set=generate.training.dataset,
-      latent_space_training_set_size=500,
-      latent_space_training_epochs=50,
-      latent_space_latent_dim=5,
       other.plots=list(plot.pathway.split)
     ),
     constrained=list(
@@ -149,21 +138,17 @@ get.calibration.schemes <- function() {
       strata=CALIB.STRATA,
       initial_guess=initial.guess.for(CALIB.PARAMS.FULL),
       error_function=calibration.error,
-      vector_to_pars=function(x) calib.vector.to.parameters(x, CALIB.PARAMS.FULL),
       constraints=calibration.constraints,
+      constraints_description=calibration.constraints.llm,
       latent_space_training_set=generate.constrained.training.dataset,
-      latent_space_training_set_size=600,
-      latent_space_training_epochs=50,
-      latent_space_latent_dim=7,
       other.plots=list(plot.pathway.split)
     )
   ))
 }
 
 # Turn a calibration vector into the full parameter list the model runs on. The
-# app does this itself for the error function, but the constrained algorithms
-# need the scheme to provide it so that constraints can be evaluated on
-# parameters rather than on the raw vector.
+# app does this itself before it calls the error function; this copy is what
+# tests/calibration_landscape.R evaluates the error on over its own grid.
 calib.vector.to.parameters <- function(x, params) {
   pars <- default.parameters()
   i <- 1
@@ -176,24 +161,46 @@ calib.vector.to.parameters <- function(x, params) {
   return(pars)
 }
 
-# Constraints for the constrained scheme, in the c(x) <= 0 convention.
+# Constraints for the constrained scheme, in the c(x) <= 0 convention. They are
+# evaluated on the raw calibration vector, so they read it in the layout
+# described above: one block per parameter in the order of CALIB.PARAMS.FULL,
+# each block holding one value per stratum.
 # They encode what is known about the natural history independently of the
 # targets: lesion onset and malignant progression do not decrease with age, and
 # the serrated pathway stays a minority of all lesions. Together they rule out
 # the age-jagged and serrated-dominated fits that match the targets equally well
 # but are not clinically credible.
-calibration.constraints <- function(pars) {
+calibration.constraints <- function(x) {
+  x <- as.numeric(x)
+  n.strata <- length(CALIB.STRATA)
+  block <- function(param) {
+    j <- match(param, CALIB.PARAMS.FULL)
+    x[((j - 1) * n.strata + 1):(j * n.strata)]
+  }
   monotonic <- function(param) {
-    values <- sapply(CALIB.STRATA, function(stratum) as.numeric(pars[[param]][[stratum]]))
+    values <- block(param)
     head(values, -1) - tail(values, -1)
   }
-  adenoma <- sapply(CALIB.STRATA, function(s) as.numeric(pars$p.adenoma.onset[[s]]))
-  ssl <- sapply(CALIB.STRATA, function(s) as.numeric(pars$p.ssl.onset[[s]]))
+  adenoma <- block('p.adenoma.onset')
+  ssl <- block('p.ssl.onset')
   c(
     monotonic('p.adenoma.onset'),
     monotonic('p.ssl.onset'),
     monotonic('p.aa.progress'),
     sum(ssl) - 0.35 * sum(adenoma)
+  )
+}
+
+# The same constraints in words: the app's agentic_constrained wrapper calls
+# this with no arguments and appends the string to the agent's system prompt.
+calibration.constraints.llm <- function() {
+  n <- length(CALIB.STRATA)
+  paste0(
+    'The vector holds ', paste(CALIB.PARAMS.FULL, collapse=', '), ', in that ',
+    'order, each as a block of ', n, ' values running over the age groups ',
+    paste(CALIB.STRATA, collapse=', '), '.\n',
+    'Every block is non-decreasing: no value is smaller than the one before it.\n',
+    'Total p.ssl.onset is at most 35% of total p.adenoma.onset.'
   )
 }
 
