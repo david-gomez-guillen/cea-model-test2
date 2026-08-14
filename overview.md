@@ -1,3 +1,21 @@
+> # ⚠️ DEMONSTRATION MODEL ONLY — NOT A SOURCE OF TRUTH ⚠️
+>
+> **This model exists solely as a test bed for calibration algorithms.**
+>
+> The structure, the parameter values, the costs, the utilities, the calibration
+> targets and every result produced here are **illustrative and largely invented**.
+> They are *not* derived from a systematic review of the evidence, they have not
+> been validated against any real population, and they have not been reviewed by
+> anyone clinically or economically.
+>
+> **Nothing shown in this app may be used, cited or quoted as evidence about the
+> cost-effectiveness of colorectal cancer screening**, or to inform any clinical,
+> policy, funding or purchasing decision. Any ICER, life-year, QALY, cost or
+> survival figure it reports is a number that came out of a toy model and means
+> nothing outside of it.
+
+---
+
 # Colorectal cancer, two-pathway model
 
 A cost-effectiveness model of colorectal cancer screening built as a harder
@@ -182,31 +200,3 @@ build its prompt and skips that directory, does not get handed the answer.
   parameter in one age group moves the observed incidence in the following ones;
   the problem is far from the near-separable one-parameter-per-stratum structure
   of `cea-model-test`.
-
-### Measured behaviour
-
-`tests/calibration_landscape.R` measures this: it runs Nelder-Mead from the base
-case and from random points in the search box, reports where each run ends and
-how much of the lesion onset it assigns to the serrated route, and compares the
-result with a random search given the same number of model evaluations. On the
-`natural_history` scheme, with a scope of 100% and 16 starting points, Nelder-
-Mead is given about 5000 evaluations per run and ends between 0.0011 and 0.035,
-a spread of 31x across starting points and never closer than three orders of
-magnitude to the 1.8e-6 of the reference solution. The solutions assign between
-2.8% and 6.6% of lesion onset to the serrated route, against 5.3% at the
-reference solution: they are different natural histories, not the same one found
-with different precision.
-
-Run through the app's own algorithms on the same scheme, with an identity
-mapping, 10 initial points and 100 iterations (three seeds):
-
-| Algorithm | Best error found |
-|---|---|
-| `nm` | 0.0168 - 0.0179 |
-| `bo_regular` | 0.0166 - 0.0184 |
-| `bo_turbo` | 0.0014 - 0.0043 |
-| `bo_baxus` | 0.051 - 0.069 |
-
-At that budget TuRBO is an order of magnitude better than Nelder-Mead, while
-plain EI over 21 dimensions has not yet paid off its exploration and BAxUS,
-which assumes a low effective dimension, does worse than doing nothing.
