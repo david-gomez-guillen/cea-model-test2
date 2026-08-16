@@ -121,16 +121,6 @@ get.calibration.schemes <- function() {
       latent_space_training_set=generate.training.dataset,
       other.plots=list(plot.pathway.split)
     ),
-    pathway_mix=list(
-      description=CALIB.DESCRIPTION.CORE,
-      parameters=CALIB.PARAMS.CORE,
-      target=CALIB.TARGET,
-      strata=CALIB.STRATA,
-      initial_guess=initial.guess.for(CALIB.PARAMS.CORE),
-      error_function=calibration.error,
-      latent_space_training_set=generate.training.dataset,
-      other.plots=list(plot.pathway.split)
-    ),
     constrained=list(
       description=CALIB.DESCRIPTION.CONSTRAINED,
       parameters=CALIB.PARAMS.FULL,
