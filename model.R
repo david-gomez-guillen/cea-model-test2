@@ -42,7 +42,7 @@ S.LESION <- c(S.LRA, S.AA, S.SSL)
 # itself runs in a few milliseconds, which is unrealistically fast for anything
 # that has to cope with a slow model (progress reporting, calibration budgets);
 # this makes a run take a plausible amount of time. Set to 0 to disable.
-MODEL.SIMULATION.DELAY <- 3
+MODEL.SIMULATION.DELAY <- 0
 
 # Screening schedules, as the ages at which a round is offered.
 SCREENING.SCHEDULES <- list(
