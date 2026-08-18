@@ -291,7 +291,21 @@ plot.pathway.split <- function(data) {
                                   list(series('p.adenoma.onset'), series('p.ssl.onset'))))
   if (is.null(plt.df)) return(NULL)
 
-  plt <- ggplot(plt.df, aes(x=stratum, y=value, group=parameter, colour=parameter)) +
+  # The `text` aesthetic is what the calibration tab shows on hover: it renders
+  # this plot with ggplotly(tooltip='text'), so a plot that does not map it gets
+  # points with an empty hover label. ggplot2 warns about it as an unknown
+  # aesthetic when the plot is drawn outside plotly, which is harmless.
+  #
+  # Significant digits rather than decimal places, one value at a time: serrated
+  # onset is an order of magnitude below adenoma onset, so a fixed number of
+  # decimals rounds it away and a shared format pads every other label out to the
+  # decimals it needs.
+  label <- function(x) format(signif(x, 4), scientific=FALSE)
+  plt.df$text <- sprintf('%s\n%s: %s', plt.df$stratum, plt.df$parameter,
+                         vapply(plt.df$value, label, character(1)))
+
+  plt <- ggplot(plt.df, aes(x=stratum, y=value, group=parameter, colour=parameter,
+                            text=text)) +
     geom_point() +
     geom_line() +
     labs(x='Age group', y='Annual probability of lesion onset', colour='') +
