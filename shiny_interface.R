@@ -160,24 +160,35 @@ calib.vector.to.parameters <- function(x, params) {
 # the serrated pathway stays a minority of all lesions. Together they rule out
 # the age-jagged and serrated-dominated fits that match the targets equally well
 # but are not clinically credible.
-calibration.constraints <- function(x) {
+#
+# `partial` says the vector is only filled in as far as a stepwise calibration
+# has got: the first values of the layout, the rest not searched yet. What that
+# decides is the monotonicity of the blocks it reaches, so far as it reaches
+# them; the serrated share is a ratio of two whole blocks and waits for both.
+# The leading constant is satisfied by construction and gives the first step,
+# which holds a single value and no pair to compare, a constraint to model.
+calibration.constraints <- function(x, partial=FALSE) {
   x <- as.numeric(x)
   n.strata <- length(CALIB.STRATA)
   block <- function(param) {
     j <- match(param, CALIB.PARAMS.FULL)
-    x[((j - 1) * n.strata + 1):(j * n.strata)]
+    x[intersect(((j - 1) * n.strata + 1):(j * n.strata), seq_along(x))]
   }
   monotonic <- function(param) {
     values <- block(param)
+    if (length(values) < 2) return(numeric(0))
     head(values, -1) - tail(values, -1)
   }
   adenoma <- block('p.adenoma.onset')
   ssl <- block('p.ssl.onset')
+  serrated.share <- if (length(adenoma) == n.strata && length(ssl) == n.strata)
+    sum(ssl) - 0.35 * sum(adenoma) else numeric(0)
   c(
+    if (partial) -1,
     monotonic('p.adenoma.onset'),
     monotonic('p.ssl.onset'),
     monotonic('p.aa.progress'),
-    sum(ssl) - 0.35 * sum(adenoma)
+    serrated.share
   )
 }
 
