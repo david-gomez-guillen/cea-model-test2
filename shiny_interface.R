@@ -14,12 +14,22 @@ get.overview <- function() {
   return(paste(readLines(file.path(model.dir, 'overview.md')), collapse='\n'))
 }
 
+# Grouped by screening modality: the app reads a named list of entries as the
+# headings the strategies hang from (see normalize.strategies() in shiny-cea).
+# The name is still what run.simulation() is given, so grouping changes nothing
+# but how the strategies are shown.
 get.strategies <- function() {
   return(list(
-    list(name='no_screening', display.name='No screening'),
-    list(name='fit_biennial', display.name='Biennial FIT, 50-74'),
-    list(name='colonoscopy_10y', display.name='Colonoscopy every 10 years, 50-79'),
-    list(name='colonoscopy_45', display.name='Colonoscopy every 10 years, 45-79')
+    `No screening`=list(
+      list(name='no_screening', display.name='No screening')
+    ),
+    FIT=list(
+      list(name='fit_biennial', display.name='Biennial FIT, 50-74')
+    ),
+    Colonoscopy=list(
+      list(name='colonoscopy_10y', display.name='Colonoscopy every 10 years, 50-79'),
+      list(name='colonoscopy_45', display.name='Colonoscopy every 10 years, 45-79')
+    )
   ))
 }
 
