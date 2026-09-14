@@ -19,17 +19,17 @@ source('model.R')
 # The three calibrated curves at the reference solution. The burn-in stratum
 # (20-29) contributes nothing the targets can see, so it is kept at its base
 # value: the right answer there is to leave it alone.
-TRUE.ADENOMA.ONSET <- c(0.0050, 0.0070, 0.0130, 0.0190, 0.0230, 0.0245, 0.0265)
-TRUE.SSL.ONSET <- c(0.00018, 0.00050, 0.00080, 0.00110, 0.00125, 0.00135, 0.00145)
-TRUE.AA.PROGRESS <- c(0.0053, 0.0085, 0.0125, 0.0185, 0.0250, 0.0300, 0.0335)
+TRUE.LGL.ONSET <- c(0.0050, 0.0070, 0.0130, 0.0190, 0.0230, 0.0245, 0.0265)
+TRUE.FPL.ONSET <- c(0.00018, 0.00050, 0.00080, 0.00110, 0.00125, 0.00135, 0.00145)
+TRUE.HGL.PROGRESS <- c(0.0053, 0.0085, 0.0125, 0.0185, 0.0250, 0.0300, 0.0335)
 
 reference.parameters <- function() {
   pars <- default.parameters()
   for (i in seq_along(MODEL.STRATA)) {
     stratum <- MODEL.STRATA[i]
-    pars$p.adenoma.onset[[stratum]] <- TRUE.ADENOMA.ONSET[i]
-    pars$p.ssl.onset[[stratum]] <- TRUE.SSL.ONSET[i]
-    pars$p.aa.progress[[stratum]] <- TRUE.AA.PROGRESS[i]
+    pars$p.lgl.onset[[stratum]] <- TRUE.LGL.ONSET[i]
+    pars$p.fpl.onset[[stratum]] <- TRUE.FPL.ONSET[i]
+    pars$p.hgl.progress[[stratum]] <- TRUE.HGL.PROGRESS[i]
   }
   return(pars)
 }
@@ -37,7 +37,7 @@ reference.parameters <- function() {
 # The reference solution as the calibration vector the app optimizes over:
 # stratum by stratum, and within a stratum in the order the scheme lists its
 # parameters.
-reference.vector <- function(params=c('p.adenoma.onset', 'p.ssl.onset', 'p.aa.progress')) {
+reference.vector <- function(params=c('p.lgl.onset', 'p.fpl.onset', 'p.hgl.progress')) {
   pars <- reference.parameters()
   unlist(lapply(params, function(param) {
     sapply(MODEL.STRATA, function(stratum) pars[[param]][[stratum]])
