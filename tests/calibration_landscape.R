@@ -4,7 +4,7 @@
 # box the app searches (the initial guess scaled by 1 +/- the calibration scope)
 # and compares the results with a random search given the same number of model
 # evaluations. Prints, for every solution found, the share of lesion onset that
-# the solution assigns to the serrated pathway, which is what separates the
+# the solution assigns to the fast pathway, which is what separates the
 # basins of this model.
 #
 # Run from the repository root:
@@ -35,24 +35,24 @@ objective <- function(x) {
   scheme$error_function(calib.vector.to.parameters(x, params), scheme$target)$error
 }
 
-# Share of total lesion onset assigned to the serrated pathway, which is where
+# Share of total lesion onset assigned to the fast pathway, which is where
 # the ambiguity of this model lives.
-serrated.share <- function(x) {
+fast.share <- function(x) {
   block <- function(param) {
     j <- which(params == param)
     ((j-1)*length(CALIB.STRATA) + 1):(j*length(CALIB.STRATA))
   }
-  adenoma <- sum(x[block('p.adenoma.onset')])
-  ssl <- sum(x[block('p.ssl.onset')])
-  ssl / (ssl + adenoma)
+  slow <- sum(x[block('p.lgl.onset')])
+  fast <- sum(x[block('p.fpl.onset')])
+  fast / (fast + slow)
 }
 
 cat(sprintf('scheme: %s (%d parameters, scope %.0f%%)\n', scheme.name, length(initial.guess), 100*scope))
 cat(sprintf('error at the reference solution: %.3g\n',
             objective(reference.vector(params))))
 cat(sprintf('error at the base case (the initial guess): %.4g\n', objective(initial.guess)))
-cat(sprintf('serrated onset share: reference %.3f, base case %.3f\n\n',
-            serrated.share(reference.vector(params)), serrated.share(initial.guess)))
+cat(sprintf('fast-pathway onset share: reference %.3f, base case %.3f\n\n',
+            fast.share(reference.vector(params)), fast.share(initial.guess)))
 
 cat(sprintf('Nelder-Mead from %d starting points (the first is the base case)\n', n.starts))
 solutions <- list()
@@ -67,12 +67,12 @@ for (i in seq_len(n.starts)) {
 }
 
 errors <- sapply(solutions, function(s) s$error)
-shares <- sapply(solutions, function(s) serrated.share(s$x))
+shares <- sapply(solutions, function(s) fast.share(s$x))
 budget <- round(mean(sapply(solutions, function(s) s$evaluations)))
 
 report <- data.frame(start=ifelse(seq_along(errors) == 1, 'base case', 'random'),
                      error=signif(errors, 4),
-                     serrated.share=round(shares, 3))
+                     fast.share=round(shares, 3))
 print(report[order(report$error),], row.names=FALSE)
 
 cat(sprintf('\nbest %.4g / median %.4g / worst %.4g, %d evaluations per run on average\n',
