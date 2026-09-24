@@ -325,13 +325,15 @@ plot.pathway.split <- function(data) {
   plt.df$text <- sprintf('%s\n%s: %s', plt.df$stratum, plt.df$parameter,
                          vapply(plt.df$value, label, character(1)))
 
+  # The legend goes on top: ggplotly puts a bottom legend at a fixed fraction of
+  # the plot height, which on a plot this short lands on the x axis title.
   plt <- ggplot(plt.df, aes(x=stratum, y=value, group=parameter, colour=parameter,
                             text=text)) +
     geom_point() +
     geom_line() +
     labs(x='Age group', y='Annual probability of lesion onset', colour='') +
     theme_minimal() +
-    theme(legend.position='bottom')
+    theme(legend.position='top')
   return(plt)
 }
 
