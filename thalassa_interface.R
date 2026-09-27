@@ -171,15 +171,16 @@ calib.vector.to.parameters <- function(x, params) {
 # the age-jagged and fast-pathway-dominated fits that match the targets equally well
 # but are not clinically credible.
 #
-# `partial` says the vector is only filled in as far as a stepwise calibration
-# has got: the first values of the layout, the rest not searched yet. What that
-# decides is the monotonicity of the blocks it reaches, so far as it reaches
-# them; the fast-pathway share is a ratio of two whole blocks and waits for both.
-# The leading constant is satisfied by construction and gives the first step,
-# which holds a single value and no pair to compare, a constraint to model.
+# `partial` says the vector only covers the strata a stepwise calibration has
+# got through, which it takes one at a time: the same layout over the first
+# strata, the rest not searched yet. What that decides is the monotonicity of
+# every block over those strata; the fast-pathway share is a ratio of two whole
+# blocks and waits for every stratum. The leading constant is satisfied by
+# construction and gives the first step, which holds a single stratum and no
+# pair to compare, a constraint to model.
 calibration.constraints <- function(x, partial=FALSE) {
   x <- as.numeric(x)
-  n.strata <- length(CALIB.STRATA)
+  n.strata <- length(x) %/% length(CALIB.PARAMS.FULL)
   block <- function(param) {
     j <- match(param, CALIB.PARAMS.FULL)
     x[intersect(((j - 1) * n.strata + 1):(j * n.strata), seq_along(x))]
@@ -191,7 +192,7 @@ calibration.constraints <- function(x, partial=FALSE) {
   }
   slow <- block('p.lgl.onset')
   fast <- block('p.fpl.onset')
-  fast.share <- if (length(slow) == n.strata && length(fast) == n.strata)
+  fast.share <- if (length(slow) == length(CALIB.STRATA) && length(fast) == length(CALIB.STRATA))
     sum(fast) - 0.35 * sum(slow) else numeric(0)
   c(
     if (partial) -1,
