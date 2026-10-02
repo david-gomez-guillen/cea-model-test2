@@ -61,7 +61,7 @@ the corners of the search box gets a valid Markov chain rather than an error.
 
 `simulate()` also takes an artificial per-call delay
 (`MODEL.SIMULATION.DELAY` in `model.R`), there to stand in for a slow model when
-testing progress reporting or calibration budgets. It is 3 seconds on `master`
+testing progress reporting or calibration budgets. It is 3 seconds on `main`
 and 0 on the `no_delay` branch, where a run takes the few milliseconds the model
 actually needs.
 
