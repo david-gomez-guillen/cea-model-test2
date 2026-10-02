@@ -50,6 +50,99 @@ get.model.settings <- function() {
   ))
 }
 
+# State diagrams shown in the Overview tab, one panel each. They describe
+# transition.matrix() and apply.screening() in model.R and must be kept in sync
+# with them. Other-cause death is left out of both: every living state leads to
+# it, and an arrow from each into one node would hide the rest.
+MODEL.STATE.NODES <- data.frame(
+  id=c('normal', 'lgl', 'hgl', 'fpl',
+       'pre.early.slow', 'pre.late.slow', 'pre.early.fast', 'pre.late.fast',
+       'clin.early', 'clin.late', 'survivor', 'dead.cancer'),
+  label=c('Normal', 'Low-grade\nlesion', 'High-grade\nlesion', 'Fast-pathway\nlesion',
+          'Preclinical\nlocalized (slow)', 'Preclinical\nadvanced (slow)',
+          'Preclinical\nlocalized (fast)', 'Preclinical\nadvanced (fast)',
+          'Diagnosed\nlocalized', 'Diagnosed\nadvanced', 'Survivor', 'Cancer death'),
+  group=c('No lesion', 'Slow pathway', 'Slow pathway', 'Fast pathway',
+          'Slow pathway', 'Slow pathway', 'Fast pathway', 'Fast pathway',
+          'Diagnosed cancer', 'Diagnosed cancer', 'Survivor', 'Death'),
+  description=c(
+    'No lesion. The whole cohort starts here.',
+    'Low-grade lesion, the first step of the slow pathway.',
+    'High-grade lesion, the precursor of slow-pathway cancer.',
+    'Fast-pathway lesion, harder to detect than the slow-pathway ones.',
+    'Undiagnosed localized cancer, slow pathway.',
+    'Undiagnosed advanced cancer, slow pathway.',
+    'Undiagnosed localized cancer, fast pathway.',
+    'Undiagnosed advanced cancer, fast pathway.',
+    'Diagnosed localized cancer, under treatment.',
+    'Diagnosed advanced cancer, under treatment.',
+    'Recovered after treatment, with a small annual risk of late recurrence.',
+    'Death from cancer.'
+  ),
+  # Laid out by hand: one column per step of the disease, the slow pathway on the
+  # upper row and the fast one on the lower.
+  x=290 * c(0, 1, 2, 2, 3, 4, 3, 4, 5, 5, 6, 7),
+  y=75 * c(0, -1, -1, 1, -1, -1, 1, 1, -1, 1, 0, 0)
+)
+
+get.model.states <- function() {
+  natural.history <- data.frame(
+    from=c('normal', 'normal', 'lgl', 'lgl', 'hgl', 'hgl', 'fpl', 'fpl',
+           'pre.early.slow', 'pre.early.slow', 'pre.late.slow',
+           'pre.early.fast', 'pre.early.fast', 'pre.late.fast',
+           'clin.early', 'clin.early', 'clin.late', 'clin.late', 'survivor'),
+    to=c('lgl', 'fpl', 'hgl', 'normal', 'pre.early.slow', 'lgl', 'pre.early.fast', 'normal',
+         'clin.early', 'pre.late.slow', 'clin.late',
+         'clin.early', 'pre.late.fast', 'clin.late',
+         'survivor', 'dead.cancer', 'survivor', 'dead.cancer', 'dead.cancer'),
+    label=c('Onset', 'Onset', 'Progression', 'Regression', 'Progression', 'Regression',
+            'Progression', 'Regression',
+            'Symptoms', 'Stage progression', 'Symptoms',
+            'Symptoms', 'Stage progression', 'Symptoms',
+            'Cure', 'Death', 'Cure', 'Death', 'Late recurrence'),
+    description=c('p.lgl.onset', 'p.fpl.onset', 'p.lgl.progress', 'p.lgl.regress',
+                  'p.hgl.progress', 'p.hgl.regress', 'p.fpl.progress', 'p.fpl.regress',
+                  'p.symptomatic.early.slow', 'p.stage.progress.slow', 'p.symptomatic.late.slow',
+                  'p.symptomatic.early.fast', 'p.stage.progress.fast', 'p.symptomatic.late.fast',
+                  'p.cure.early', 'p.cancer.death.early', 'p.cure.late', 'p.cancer.death.late',
+                  'p.survivor.death')
+  )
+
+  screening.states <- c('normal', 'lgl', 'hgl', 'fpl',
+                        'pre.early.slow', 'pre.late.slow', 'pre.early.fast', 'pre.late.fast',
+                        'clin.early', 'clin.late')
+  screening <- data.frame(
+    from=c('lgl', 'hgl', 'fpl',
+           'pre.early.slow', 'pre.early.fast', 'pre.late.slow', 'pre.late.fast'),
+    to=c('normal', 'normal', 'normal',
+         'clin.early', 'clin.early', 'clin.late', 'clin.late'),
+    label=c('Removal', 'Removal', 'Removal',
+            'Detection', 'Detection', 'Detection', 'Detection'),
+    description=c(
+      'Detected and removed: sens.procedure.lgl, after a positive test (sens.test.lgl) in a test round.',
+      'Detected and removed: sens.procedure.hgl, after a positive test (sens.test.hgl) in a test round.',
+      'Detected and removed: sens.procedure.fpl, after a positive test (sens.test.fpl) in a test round.',
+      'Diagnosed at the localized stage: sens.procedure.cancer, after a positive test (sens.test.cancer) in a test round.',
+      'Diagnosed at the localized stage, as the slow-pathway one but scaled by rr.detection.fast.',
+      'Diagnosed at the advanced stage: sens.procedure.cancer, after a positive test (sens.test.cancer) in a test round.',
+      'Diagnosed at the advanced stage, as the slow-pathway one but scaled by rr.detection.fast.'
+    )
+  )
+
+  return(list(
+    `Natural history`=list(
+      description='The annual transitions of the two pathways, from a first lesion to the outcome of a diagnosed cancer. Every living state is also exposed to other-cause death, which is not drawn. Hover a transition for the parameter behind it.',
+      nodes=MODEL.STATE.NODES,
+      edges=natural.history
+    ),
+    `Screening round`=list(
+      description='What a screening round moves, before the natural history of the cycle is applied: detected lesions are removed and detected preclinical cancers are diagnosed at the stage they had reached.',
+      nodes=MODEL.STATE.NODES[MODEL.STATE.NODES$id %in% screening.states, ],
+      edges=screening
+    )
+  ))
+}
+
 run.simulation <- function(strategies, pars) {
   # simulate() takes the parameters as the named list the app already builds,
   # and copes with any of them arriving as one value per stratum.
