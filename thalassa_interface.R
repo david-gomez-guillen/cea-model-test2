@@ -313,6 +313,15 @@ get.model.states <- function() {
   ))
 }
 
+get.code.sample <- function() {
+  # Code shown in the Code panel of the Overview tab, one tab per entry, for
+  # whoever wants to see how the model works. The whole of model.R is written to
+  # be read, so it is shown as it is.
+  return(list(
+    `model.R`=paste(readLines('model.R'), collapse='\n')
+  ))
+}
+
 run.simulation <- function(strategies, pars) {
   # simulate() takes the parameters as the named list the app already builds,
   # and copes with any of them arriving as one value per stratum.
