@@ -1,50 +1,72 @@
-# Cancer natural history model with two competing pathways: a slow pathway
-# through two lesion grades and a fast pathway through a single lesion type.
+# A cost-effectiveness model of screening for a hypothetical cancer.
 #
-# The model is deliberately harder to calibrate than a plain three-state Markov
-# chain: the two pathways are only weakly distinguishable from the calibration
-# targets, which makes the error surface multimodal. See overview.md.
+# It is a Markov cohort model. Rather than following people one by one, it keeps
+# track of which share of a group of people, the cohort, is in each health state,
+# and moves those shares from state to state once a year.
+#
+#   Cycle:       one year
+#   Horizon:     from age 20 to age 89
+#   Strategies:  no screening, or screening rounds at fixed ages, done with a
+#                test or with a procedure
+#
+# Cancer grows out of a lesion, along one of two pathways:
+#
+#   slow:  normal -> low-grade lesion -> high-grade lesion -> cancer
+#   fast:  normal -> fast-pathway lesion -> cancer
+#
+# A cancer starts out preclinical, which means nobody knows it is there. It is
+# localized first and advanced later, and it is diagnosed when it gives symptoms
+# or when a screening round finds it. Screening pays off in two ways: it removes
+# lesions before they turn into cancer, and it finds cancers while they are
+# still localized and easier to cure.
+#
+# The file reads top to bottom: the states, the parameters, the yearly
+# transitions, what a screening round does, and simulate(), which puts them
+# together.
+
+
+# ---- States ---------------------------------------------------------------------
 
 MODEL.AGE.START <- 20
 MODEL.AGE.END <- 89
-MODEL.STRATA <- c('20-29', '30-39', '40-49', '50-59', '60-69', '70-79', '80-89')
 
-# Health states. The slow and the fast pathway have their own preclinical
-# (undiagnosed) cancer states because fast-pathway cancers progress faster and
-# stay asymptomatic for longer, which is what makes the stage distribution at
-# diagnosis informative about the pathway mix.
+# Results by age are reported per ten-year age group, the strata of the model.
+MODEL.STRATA <- c('20-29', '30-39', '40-49', '50-59', '60-69', '70-79', '80-89')
+STRATUM.SIZE <- 10
+
+# Each pathway has preclinical states of its own because its cancers behave
+# differently: those of the fast pathway advance sooner and take longer to give
+# symptoms, so more of them are diagnosed late.
 MODEL.STATES <- c(
-  'normal',          #  1 no lesion
-  'lgl',             #  2 low-grade lesion
-  'hgl',             #  3 high-grade lesion
-  'fpl',             #  4 fast-pathway lesion
-  'pre.early.slow',  #  5 preclinical localized cancer, slow pathway
-  'pre.late.slow',   #  6 preclinical advanced cancer, slow pathway
-  'pre.early.fast',  #  7 preclinical localized cancer, fast pathway
-  'pre.late.fast',   #  8 preclinical advanced cancer, fast pathway
-  'clin.early',      #  9 diagnosed localized cancer, under treatment
-  'clin.late',       # 10 diagnosed advanced cancer, under treatment
-  'survivor',        # 11 post-treatment survivor
-  'dead.cancer',     # 12 death from cancer
-  'dead.other'       # 13 death from other causes
+  'normal',          # no lesion
+  'lgl',             # low-grade lesion
+  'hgl',             # high-grade lesion
+  'fpl',             # fast-pathway lesion
+  'pre.early.slow',  # preclinical localized cancer, slow pathway
+  'pre.late.slow',   # preclinical advanced cancer, slow pathway
+  'pre.early.fast',  # preclinical localized cancer, fast pathway
+  'pre.late.fast',   # preclinical advanced cancer, fast pathway
+  'clin.early',      # diagnosed localized cancer, under treatment
+  'clin.late',       # diagnosed advanced cancer, under treatment
+  'survivor',        # alive after treatment
+  'dead.cancer',     # death from cancer
+  'dead.other'       # death from other causes
 )
 
-S.NORMAL <- 1; S.LGL <- 2; S.HGL <- 3; S.FPL <- 4
-S.PE.SLOW <- 5; S.PL.SLOW <- 6; S.PE.FAST <- 7; S.PL.FAST <- 8
-S.CE <- 9; S.CL <- 10; S.SURV <- 11; S.DCAN <- 12; S.DOTH <- 13
+# Groups of states the model refers to more than once.
+LESION <- c('lgl', 'hgl', 'fpl')
+PRECLINICAL <- c('pre.early.slow', 'pre.late.slow', 'pre.early.fast', 'pre.late.fast')
+DEAD <- c('dead.cancer', 'dead.other')
+ALIVE <- setdiff(MODEL.STATES, DEAD)
 
-# States without a cancer diagnosis, i.e. the population at risk of a first
-# cancer. Used as the denominator of incidence and lesion prevalence.
-S.AT.RISK <- c(S.NORMAL, S.LGL, S.HGL, S.FPL, S.PE.SLOW, S.PL.SLOW, S.PE.FAST, S.PL.FAST)
-S.LESION <- c(S.LGL, S.HGL, S.FPL)
+# Everyone who has never been diagnosed with cancer. Incidence and lesion
+# prevalence are measured over them.
+AT.RISK <- c('normal', LESION, PRECLINICAL)
 
-# Artificial delay, in seconds, applied once per simulate() call. The model
-# itself runs in a few milliseconds, which is unrealistically fast for anything
-# that has to cope with a slow model (progress reporting, calibration budgets);
-# this makes a run take a plausible amount of time. Set to 0 to disable.
-MODEL.SIMULATION.DELAY <- 0
+# One value per state, all zero, to be filled in by name.
+per.state <- function() setNames(rep(0, length(MODEL.STATES)), MODEL.STATES)
 
-# Screening schedules, as the ages at which a round is offered.
+# The ages at which each strategy offers a screening round, and what with.
 SCREENING.SCHEDULES <- list(
   no_screening = list(modality = NULL, ages = integer(0)),
   test_biennial = list(modality = 'test', ages = seq(50, 74, by = 2)),
@@ -52,470 +74,328 @@ SCREENING.SCHEDULES <- list(
   procedure_45 = list(modality = 'procedure', ages = seq(45, 79, by = 10))
 )
 
-# Base values of the three age-dependent (and calibrated) transition
-# probabilities, one per stratum of MODEL.STRATA.
-BASE.LGL.ONSET <- c(0.0050, 0.0100, 0.0180, 0.0270, 0.0320, 0.0340, 0.0370)
-BASE.FPL.ONSET <- c(0.00018, 0.00035, 0.00056, 0.00077, 0.00088, 0.00095, 0.00102)
-BASE.HGL.PROGRESS <- c(0.0053, 0.0064, 0.0094, 0.0139, 0.0188, 0.0225, 0.0251)
+# Seconds simulate() waits before it starts. The model runs in milliseconds, and
+# the wait makes it behave like the slow models it stands in for. 0 disables it.
+MODEL.SIMULATION.DELAY <- 0
 
-# Descriptors of every model parameter, in the shape the shiny app expects from
-# get.parameters(). Kept here so that model.R is the single source of truth for
-# the base case and can be run standalone.
-stratified.parameter <- function(name, display.name, values, class) {
-  lapply(seq_along(MODEL.STRATA), function(i) {
-    list(name = name,
-         display.name = display.name,
-         base.value = values[i],
-         stratum = MODEL.STRATA[i],
-         class = class)
-  })
-}
 
-MODEL.PARAMETERS <- c(
-  stratified.parameter('p.lgl.onset',
-                       'Annual probability of developing a low-grade lesion',
-                       BASE.LGL.ONSET, 'Natural history (slow pathway)'),
-  stratified.parameter('p.fpl.onset',
-                       'Annual probability of developing a fast-pathway lesion',
-                       BASE.FPL.ONSET, 'Natural history (fast pathway)'),
-  stratified.parameter('p.hgl.progress',
-                       'Annual probability that a high-grade lesion becomes cancer',
-                       BASE.HGL.PROGRESS, 'Natural history (slow pathway)'),
-  list(
-    list(name = 'p.lgl.progress',
-         display.name = 'Annual probability that a low-grade lesion becomes high-grade',
-         base.value = 0.015, class = 'Natural history (slow pathway)'),
-    list(name = 'p.lgl.regress',
-         display.name = 'Annual probability that a low-grade lesion regresses',
-         base.value = 0.015, class = 'Natural history (slow pathway)'),
-    list(name = 'p.hgl.regress',
-         display.name = 'Annual probability that a high-grade lesion regresses',
-         base.value = 0.005, class = 'Natural history (slow pathway)'),
-    list(name = 'p.fpl.progress',
-         display.name = 'Annual probability that a fast-pathway lesion becomes cancer',
-         base.value = 0.040, class = 'Natural history (fast pathway)'),
-    list(name = 'p.fpl.regress',
-         display.name = 'Annual probability that a fast-pathway lesion regresses',
-         base.value = 0.020, class = 'Natural history (fast pathway)'),
-    list(name = 'p.stage.progress.slow',
-         display.name = 'Annual probability of localized to advanced stage, slow-pathway cancer',
-         base.value = 0.300, class = 'Cancer progression'),
-    list(name = 'p.stage.progress.fast',
-         display.name = 'Annual probability of localized to advanced stage, fast-pathway cancer',
-         base.value = 0.450, class = 'Cancer progression'),
-    list(name = 'p.symptomatic.early.slow',
-         display.name = 'Annual probability of symptomatic diagnosis, localized slow-pathway cancer',
-         base.value = 0.270, class = 'Cancer progression'),
-    list(name = 'p.symptomatic.late.slow',
-         display.name = 'Annual probability of symptomatic diagnosis, advanced slow-pathway cancer',
-         base.value = 0.550, class = 'Cancer progression'),
-    list(name = 'p.symptomatic.early.fast',
-         display.name = 'Annual probability of symptomatic diagnosis, localized fast-pathway cancer',
-         base.value = 0.120, class = 'Cancer progression'),
-    list(name = 'p.symptomatic.late.fast',
-         display.name = 'Annual probability of symptomatic diagnosis, advanced fast-pathway cancer',
-         base.value = 0.450, class = 'Cancer progression'),
-    list(name = 'p.cure.early',
-         display.name = 'Annual probability of cure after a localized cancer diagnosis',
-         base.value = 0.550, class = 'Cancer survival'),
-    list(name = 'p.cancer.death.early',
-         display.name = 'Annual probability of cancer death, localized cancer',
-         base.value = 0.030, class = 'Cancer survival'),
-    list(name = 'p.cure.late',
-         display.name = 'Annual probability of cure after an advanced cancer diagnosis',
-         base.value = 0.120, class = 'Cancer survival'),
-    list(name = 'p.cancer.death.late',
-         display.name = 'Annual probability of cancer death, advanced cancer',
-         base.value = 0.250, class = 'Cancer survival'),
-    list(name = 'p.survivor.death',
-         display.name = 'Annual probability of cancer death after recovery (late recurrence)',
-         base.value = 0.010, class = 'Cancer survival'),
-    list(name = 'mortality.other.base',
-         display.name = 'Other-cause mortality at age 20',
-         base.value = 0.0005, class = 'General'),
-    list(name = 'mortality.other.rate',
-         display.name = 'Gompertz rate of other-cause mortality',
-         base.value = 0.085, class = 'General'),
-    list(name = 'adherence.test',
-         display.name = 'Proportion attending an invitation to the screening test',
-         base.value = 0.650, class = 'Screening (test)'),
-    list(name = 'sens.test.lgl',
-         display.name = 'Test sensitivity for low-grade lesion',
-         base.value = 0.040, class = 'Screening (test)'),
-    list(name = 'sens.test.hgl',
-         display.name = 'Test sensitivity for high-grade lesion',
-         base.value = 0.240, class = 'Screening (test)'),
-    list(name = 'sens.test.fpl',
-         display.name = 'Test sensitivity for fast-pathway lesion',
-         base.value = 0.080, class = 'Screening (test)'),
-    list(name = 'sens.test.cancer',
-         display.name = 'Test sensitivity for localized cancer',
-         base.value = 0.550, class = 'Screening (test)'),
-    list(name = 'spec.test',
-         display.name = 'Test specificity',
-         base.value = 0.950, class = 'Screening (test)'),
-    list(name = 'adherence.procedure',
-         display.name = 'Proportion attending an invitation to the screening procedure',
-         base.value = 0.550, class = 'Screening (procedure)'),
-    list(name = 'sens.procedure.lgl',
-         display.name = 'Procedure sensitivity for low-grade lesion',
-         base.value = 0.750, class = 'Screening (procedure)'),
-    list(name = 'sens.procedure.hgl',
-         display.name = 'Procedure sensitivity for high-grade lesion',
-         base.value = 0.920, class = 'Screening (procedure)'),
-    list(name = 'sens.procedure.fpl',
-         display.name = 'Procedure sensitivity for fast-pathway lesion',
-         base.value = 0.550, class = 'Screening (procedure)'),
-    list(name = 'sens.procedure.cancer',
-         display.name = 'Procedure sensitivity for localized cancer',
-         base.value = 0.950, class = 'Screening (procedure)'),
-    list(name = 'rr.detection.fast',
-         display.name = 'Relative detection of fast-pathway versus slow-pathway cancer',
-         base.value = 0.850, class = 'Screening (procedure)'),
-    list(name = 'p.procedure.complication',
-         display.name = 'Probability of a serious complication per procedure',
-         base.value = 0.002, class = 'Screening (procedure)'),
-    list(name = 'cost.test',
-         display.name = 'Cost per screening test performed',
-         base.value = 30, class = 'Costs'),
-    list(name = 'cost.procedure',
-         display.name = 'Cost per procedure performed',
-         base.value = 800, class = 'Costs'),
-    list(name = 'cost.removal',
-         display.name = 'Additional cost per lesion removed',
-         base.value = 250, class = 'Costs'),
-    list(name = 'cost.complication',
-         display.name = 'Cost per serious procedure complication',
-         base.value = 3000, class = 'Costs'),
-    list(name = 'cost.treatment.early',
-         display.name = 'Annual cost of treating a localized cancer',
-         base.value = 18000, class = 'Costs'),
-    list(name = 'cost.treatment.late',
-         display.name = 'Annual cost of treating an advanced cancer',
-         base.value = 40000, class = 'Costs'),
-    list(name = 'cost.followup',
-         display.name = 'Annual follow-up cost of a cancer survivor',
-         base.value = 1200, class = 'Costs'),
-    list(name = 'utility.cancer.early',
-         display.name = 'Utility of a year with treated localized cancer',
-         base.value = 0.720, class = 'Utilities'),
-    list(name = 'utility.cancer.late',
-         display.name = 'Utility of a year with treated advanced cancer',
-         base.value = 0.500, class = 'Utilities'),
-    list(name = 'utility.survivor',
-         display.name = 'Utility of a year as a cancer survivor',
-         base.value = 0.920, class = 'Utilities'),
-    list(name = 'disutility.complication',
-         display.name = 'Disutility of a serious procedure complication',
-         base.value = 0.020, class = 'Utilities'),
-    list(name = 'discount',
-         display.name = 'Discount rate for costs and effects',
-         base.value = 0.030, class = 'General')
-  )
-)
+# ---- Parameters -----------------------------------------------------------------
 
-# Base case parameter values in the shape simulate() expects: a named list where
-# stratified parameters are themselves named lists over MODEL.STRATA.
-default.parameters <- function() {
-  pars <- list()
-  for (descriptor in MODEL.PARAMETERS) {
-    if (is.null(descriptor$stratum)) {
-      pars[[descriptor$name]] <- descriptor$base.value
-    } else {
-      if (is.null(pars[[descriptor$name]])) pars[[descriptor$name]] <- list()
-      pars[[descriptor$name]][[descriptor$stratum]] <- descriptor$base.value
-    }
-  }
-  return(pars)
+# The position of the stratum an age falls in.
+stratum.index <- function(age) {
+  min(length(MODEL.STRATA), max(1, (age - MODEL.AGE.START) %/% STRATUM.SIZE + 1))
 }
 
 stratum.of.age <- function(age) {
-  idx <- min(length(MODEL.STRATA), max(1, (age - MODEL.AGE.START) %/% 10 + 1))
-  MODEL.STRATA[idx]
+  MODEL.STRATA[stratum.index(age)]
 }
 
-# Parameters reach the model either as a single number or, when they are
-# stratified (declared as such by the model, split by the user in the Parameters
-# tab, or produced by a calibration), as one value per age stratum. This
-# resolves both shapes to the value in force at a given age.
+# A parameter is either one number for every age or one value per stratum.
+# This gives the value that applies at an age, whichever of the two it is.
 par.at.age <- function(value, age) {
   if (!is.list(value) && length(value) == 1) return(as.numeric(value))
+
   stratum <- stratum.of.age(age)
-  nms <- names(value)
-  if (!is.null(nms) && stratum %in% nms) return(as.numeric(value[[stratum]]))
-  idx <- min(length(value), max(1, (age - MODEL.AGE.START) %/% 10 + 1))
-  as.numeric(value[[idx]])
+  if (stratum %in% names(value)) return(as.numeric(value[[stratum]]))
+
+  # Values without stratum names are taken in the order of the strata.
+  as.numeric(value[[min(length(value), stratum.index(age))]])
 }
 
-# Every parameter of the model is allowed to arrive stratified, because the user
-# can split any of them by stratum in the Parameters tab. Resolving the whole
-# list at the start of each cycle keeps the rest of the model working on plain
-# numbers.
+# Every parameter, as the plain number it is worth at an age. The rest of the
+# model works on these and never has to think about strata.
 parameters.at.age <- function(pars, age) {
   lapply(pars, par.at.age, age = age)
 }
 
-# Annual probability of dying from something other than the modelled cancer,
-# Gompertz in age.
+
+# ---- One year of natural history ------------------------------------------------
+
+# Annual probability of dying of something other than this cancer. It grows
+# exponentially with age, which is known as a Gompertz curve.
 other.cause.mortality <- function(age, base, rate) {
   min(1, base * exp(rate * (age - MODEL.AGE.START)))
 }
 
-# Build the one-cycle natural history transition matrix at a given age.
-# Off-diagonal probabilities are clamped to [0, 1] and rows are rescaled when
-# they would exceed 1, so that extreme parameter sets proposed by an optimizer
-# still yield a valid Markov chain instead of an error.
+# The transition matrix of one year at a given age.
+# Row: the state a person is in now. Column: the state a year later.
 transition.matrix <- function(age, p) {
-  n <- length(MODEL.STATES)
-  tp <- matrix(0, nrow = n, ncol = n)
+  tp <- matrix(0, nrow = length(MODEL.STATES), ncol = length(MODEL.STATES),
+               dimnames = list(MODEL.STATES, MODEL.STATES))
 
-  mo <- other.cause.mortality(age, p$mortality.other.base, p$mortality.other.rate)
+  # A lesion appears, on one pathway or the other.
+  tp['normal', 'lgl'] <- p$p.lgl.onset
+  tp['normal', 'fpl'] <- p$p.fpl.onset
 
-  tp[S.NORMAL, S.LGL] <- p$p.lgl.onset
-  tp[S.NORMAL, S.FPL] <- p$p.fpl.onset
+  # A lesion gets worse, or regresses to what it came from.
+  tp['lgl', 'hgl'] <- p$p.lgl.progress
+  tp['lgl', 'normal'] <- p$p.lgl.regress
+  tp['hgl', 'pre.early.slow'] <- p$p.hgl.progress
+  tp['hgl', 'lgl'] <- p$p.hgl.regress
+  tp['fpl', 'pre.early.fast'] <- p$p.fpl.progress
+  tp['fpl', 'normal'] <- p$p.fpl.regress
 
-  tp[S.LGL, S.HGL] <- p$p.lgl.progress
-  tp[S.LGL, S.NORMAL] <- p$p.lgl.regress
+  # A preclinical cancer gives symptoms and is diagnosed at the stage it is in,
+  # or advances from localized to advanced without being noticed.
+  tp['pre.early.slow', 'clin.early'] <- p$p.symptomatic.early.slow
+  tp['pre.early.slow', 'pre.late.slow'] <- p$p.stage.progress.slow
+  tp['pre.late.slow', 'clin.late'] <- p$p.symptomatic.late.slow
+  tp['pre.early.fast', 'clin.early'] <- p$p.symptomatic.early.fast
+  tp['pre.early.fast', 'pre.late.fast'] <- p$p.stage.progress.fast
+  tp['pre.late.fast', 'clin.late'] <- p$p.symptomatic.late.fast
 
-  tp[S.HGL, S.PE.SLOW] <- p$p.hgl.progress
-  tp[S.HGL, S.LGL] <- p$p.hgl.regress
+  # A diagnosed cancer is cured or kills, and a survivor can still die of it.
+  tp['clin.early', 'survivor'] <- p$p.cure.early
+  tp['clin.early', 'dead.cancer'] <- p$p.cancer.death.early
+  tp['clin.late', 'survivor'] <- p$p.cure.late
+  tp['clin.late', 'dead.cancer'] <- p$p.cancer.death.late
+  tp['survivor', 'dead.cancer'] <- p$p.survivor.death
 
-  tp[S.FPL, S.PE.FAST] <- p$p.fpl.progress
-  tp[S.FPL, S.NORMAL] <- p$p.fpl.regress
-
-  tp[S.PE.SLOW, S.CE] <- p$p.symptomatic.early.slow
-  tp[S.PE.SLOW, S.PL.SLOW] <- p$p.stage.progress.slow
-  tp[S.PL.SLOW, S.CL] <- p$p.symptomatic.late.slow
-
-  tp[S.PE.FAST, S.CE] <- p$p.symptomatic.early.fast
-  tp[S.PE.FAST, S.PL.FAST] <- p$p.stage.progress.fast
-  tp[S.PL.FAST, S.CL] <- p$p.symptomatic.late.fast
-
-  tp[S.CE, S.SURV] <- p$p.cure.early
-  tp[S.CE, S.DCAN] <- p$p.cancer.death.early
-  tp[S.CL, S.SURV] <- p$p.cure.late
-  tp[S.CL, S.DCAN] <- p$p.cancer.death.late
-  tp[S.SURV, S.DCAN] <- p$p.survivor.death
-
+  # A probability cannot be negative, whatever value a parameter is given.
   tp <- pmax(tp, 0)
 
-  # Everyone alive is exposed to the same competing risk of other-cause death.
-  alive <- setdiff(seq_len(n), c(S.DCAN, S.DOTH))
-  tp[alive, S.DOTH] <- mo
+  # Everyone alive runs the same risk of dying of something else.
+  tp[ALIVE, 'dead.other'] <- other.cause.mortality(age, p$mortality.other.base,
+                                                   p$mortality.other.rate)
 
-  off <- rowSums(tp)
-  excess <- off > 1
-  if (any(excess)) tp[excess, ] <- tp[excess, ] / off[excess]
-
+  # Each row has to add up to 1, since everyone ends up somewhere. A row whose
+  # transitions add up to more is scaled down, so that a calibration trying
+  # extreme values still gets a valid matrix. What the transitions leave is the
+  # probability of staying, on the diagonal.
+  leaving <- rowSums(tp)
+  excess <- leaving > 1
+  if (any(excess)) tp[excess, ] <- tp[excess, ] / leaving[excess]
   diag(tp) <- 1 - rowSums(tp)
-  tp[S.DCAN, S.DCAN] <- 1
-  tp[S.DOTH, S.DOTH] <- 1
 
-  return(tp)
+  # The dead stay dead: these are the absorbing states.
+  tp['dead.cancer', 'dead.cancer'] <- 1
+  tp['dead.other', 'dead.other'] <- 1
+
+  tp
 }
 
-# Per-state probability that a screening round detects the lesion or cancer a
-# person is carrying, and the number of procedures the round generates.
-# A test round sends positives to the procedure, so detection is the product of
-# the two sensitivities; a procedure round only needs its own sensitivity. Late
-# preclinical cancers are somewhat easier to detect than localized ones, and
-# fast-pathway lesions are harder to detect, which is why they are missed more
-# often.
-screening.detection <- function(modality, p) {
-  detect <- rep(0, length(MODEL.STATES))
-  proc <- rep(0, length(MODEL.STATES))
 
-  sens.proc <- rep(0, length(MODEL.STATES))
-  sens.proc[S.LGL] <- p$sens.procedure.lgl
-  sens.proc[S.HGL] <- p$sens.procedure.hgl
-  sens.proc[S.FPL] <- p$sens.procedure.fpl
-  sens.proc[c(S.PE.SLOW, S.PE.FAST)] <- p$sens.procedure.cancer
-  sens.proc[c(S.PL.SLOW, S.PL.FAST)] <- min(1, p$sens.procedure.cancer * 1.05)
-  # Fast-pathway cancers are harder to detect, so the procedure misses them more
-  # often than slow-pathway ones.
-  sens.proc[c(S.PE.FAST, S.PL.FAST)] <- sens.proc[c(S.PE.FAST, S.PL.FAST)] * p$rr.detection.fast
+# ---- A screening round ------------------------------------------------------------
+
+# Sensitivity: the probability that an examination finds what a person in each
+# state is carrying. An advanced cancer is somewhat easier to find than a
+# localized one (`late.boost`), and those of the fast pathway are harder to find
+# than those of the slow one (`rr.fast`).
+sensitivity.by.state <- function(lgl, hgl, fpl, cancer, late.boost, rr.fast) {
+  sensitivity <- per.state()
+  sensitivity['lgl'] <- lgl
+  sensitivity['hgl'] <- hgl
+  sensitivity['fpl'] <- fpl
+  sensitivity[c('pre.early.slow', 'pre.early.fast')] <- cancer
+  sensitivity[c('pre.late.slow', 'pre.late.fast')] <- min(1, cancer * late.boost)
+
+  fast <- c('pre.early.fast', 'pre.late.fast')
+  sensitivity[fast] <- sensitivity[fast] * rr.fast
+  sensitivity
+}
+
+# For a person in each state, the probability that a round finds their lesion or
+# cancer (`detect`) and the probability that they undergo a procedure
+# (`procedures`).
+screening.detection <- function(modality, p) {
+  detect <- per.state()
+  procedures <- per.state()
+
+  sens.procedure <- sensitivity.by.state(
+    p$sens.procedure.lgl, p$sens.procedure.hgl, p$sens.procedure.fpl,
+    p$sens.procedure.cancer, late.boost = 1.05, rr.fast = p$rr.detection.fast)
 
   if (identical(modality, 'test')) {
-    sens.test <- rep(0, length(MODEL.STATES))
-    sens.test[S.LGL] <- p$sens.test.lgl
-    sens.test[S.HGL] <- p$sens.test.hgl
-    sens.test[S.FPL] <- p$sens.test.fpl
-    sens.test[c(S.PE.SLOW, S.PE.FAST)] <- p$sens.test.cancer
-    sens.test[c(S.PL.SLOW, S.PL.FAST)] <- min(1, p$sens.test.cancer * 1.15)
-    sens.test[c(S.PE.FAST, S.PL.FAST)] <- sens.test[c(S.PE.FAST, S.PL.FAST)] * p$rr.detection.fast
+    # The test comes first, and only those who test positive get the procedure
+    # that confirms and removes. Finding something takes both to succeed.
+    positive <- sensitivity.by.state(
+      p$sens.test.lgl, p$sens.test.hgl, p$sens.test.fpl,
+      p$sens.test.cancer, late.boost = 1.15, rr.fast = p$rr.detection.fast)
 
-    positive <- sens.test
-    # People without a lesion test positive at the complement of specificity.
-    positive[S.NORMAL] <- 1 - p$spec.test
-    positive[S.SURV] <- 1 - p$spec.test
+    # Specificity is the probability that someone with nothing tests negative,
+    # so the rest of them are false positives and get a procedure for nothing.
+    positive[c('normal', 'survivor')] <- 1 - p$spec.test
 
-    detect <- p$adherence.test * positive * sens.proc
-    proc <- p$adherence.test * positive
+    detect <- p$adherence.test * positive * sens.procedure
+    procedures <- p$adherence.test * positive
   } else if (identical(modality, 'procedure')) {
-    detect <- p$adherence.procedure * sens.proc
-    proc <- rep(p$adherence.procedure, length(MODEL.STATES))
-    proc[c(S.CE, S.CL, S.DCAN, S.DOTH)] <- 0
+    # Everyone who attends gets the procedure straight away.
+    detect <- p$adherence.procedure * sens.procedure
+    procedures[setdiff(ALIVE, c('clin.early', 'clin.late'))] <- p$adherence.procedure
   }
 
-  list(detect = pmin(1, detect), procedures = pmin(1, proc))
+  list(detect = pmin(detect, 1), procedures = pmin(procedures, 1))
 }
 
-# Apply one screening round to the cohort. Detected lesions are removed (back to
-# normal) and detected preclinical cancers are diagnosed at their current stage.
+# What a screening round does to the cohort: the lesions it finds are removed,
+# which sends those people back to normal, and the preclinical cancers it finds
+# are diagnosed at the stage they are in.
 apply.screening <- function(cohort, modality, p) {
-  sc <- screening.detection(modality, p)
-  detect <- sc$detect
+  round <- screening.detection(modality, p)
+  detect <- round$detect
 
-  removed <- cohort[S.LESION] * detect[S.LESION]
-  found.early <- cohort[S.PE.SLOW] * detect[S.PE.SLOW] + cohort[S.PE.FAST] * detect[S.PE.FAST]
-  found.late <- cohort[S.PL.SLOW] * detect[S.PL.SLOW] + cohort[S.PL.FAST] * detect[S.PL.FAST]
+  removed <- cohort[LESION] * detect[LESION]
+  found.early <- cohort[['pre.early.slow']] * detect[['pre.early.slow']] +
+                 cohort[['pre.early.fast']] * detect[['pre.early.fast']]
+  found.late <- cohort[['pre.late.slow']] * detect[['pre.late.slow']] +
+                cohort[['pre.late.fast']] * detect[['pre.late.fast']]
 
-  cohort[S.LESION] <- cohort[S.LESION] - removed
-  cohort[S.NORMAL] <- cohort[S.NORMAL] + sum(removed)
-  cohort[S.PE.SLOW] <- cohort[S.PE.SLOW] * (1 - detect[S.PE.SLOW])
-  cohort[S.PE.FAST] <- cohort[S.PE.FAST] * (1 - detect[S.PE.FAST])
-  cohort[S.PL.SLOW] <- cohort[S.PL.SLOW] * (1 - detect[S.PL.SLOW])
-  cohort[S.PL.FAST] <- cohort[S.PL.FAST] * (1 - detect[S.PL.FAST])
-  cohort[S.CE] <- cohort[S.CE] + found.early
-  cohort[S.CL] <- cohort[S.CL] + found.late
+  cohort[LESION] <- cohort[LESION] - removed
+  cohort['normal'] <- cohort['normal'] + sum(removed)
+  cohort[PRECLINICAL] <- cohort[PRECLINICAL] * (1 - detect[PRECLINICAL])
+  cohort['clin.early'] <- cohort['clin.early'] + found.early
+  cohort['clin.late'] <- cohort['clin.late'] + found.late
 
-  n.procedures <- sum(cohort * sc$procedures)
-  n.removals <- sum(removed)
-  # Only people who are alive and not currently being treated for a cancer are
-  # invited to the round.
+  # Whoever is alive and not being treated for cancer is invited to the round.
   n.tests <- if (identical(modality, 'test')) {
-    p$adherence.test * sum(cohort[c(S.AT.RISK, S.SURV)])
+    p$adherence.test * sum(cohort[c(AT.RISK, 'survivor')])
   } else 0
 
   list(cohort = cohort,
        n.tests = n.tests,
-       n.procedures = n.procedures,
-       n.removals = n.removals,
+       n.procedures = sum(cohort * round$procedures),
+       n.removals = sum(removed),
        found.early = found.early,
        found.late = found.late)
 }
 
+
+# ---- The simulation -----------------------------------------------------------------
+
 simulate <- function(strategies, pars, delay = MODEL.SIMULATION.DELAY) {
-  if (is.numeric(delay) && length(delay) == 1 && !is.na(delay) && delay > 0) {
-    Sys.sleep(delay)
-  }
+  if (delay > 0) Sys.sleep(delay)
 
-  ages <- seq(MODEL.AGE.START, MODEL.AGE.END)
-  n.states <- length(MODEL.STATES)
+  ages <- MODEL.AGE.START:MODEL.AGE.END
 
-  # Resolved once so that the discount curve stays well defined even if the user
-  # splits the rate by stratum; everything else is resolved cycle by cycle.
+  # One discount rate for the whole horizon, the one of the starting age.
   discount <- par.at.age(pars$discount, MODEL.AGE.START)
 
-  summary.df <- data.frame()
+  summary <- data.frame()
   outputs <- list()
-  cohort.states <- list()
+  cohort.info <- list()
 
   for (strategy in strategies) {
     schedule <- SCREENING.SCHEDULES[[strategy]]
     if (is.null(schedule)) stop(sprintf("Unknown strategy '%s'", strategy))
 
-    cohort <- rep(0, n.states)
-    cohort[S.NORMAL] <- 1
-    trace <- matrix(NA_real_, nrow = length(ages), ncol = n.states,
-                    dimnames = list(as.character(ages), MODEL.STATES))
+    # The share of the cohort in each state. Everyone starts with no lesion,
+    # and the shares always add up to 1.
+    cohort <- per.state()
+    cohort['normal'] <- 1
 
-    costs <- numeric(length(ages))
-    qalys <- numeric(length(ages))
-    at.risk <- numeric(length(ages))
-    lesion.prevalence <- numeric(length(ages))
-    new.early <- numeric(length(ages))
-    new.late <- numeric(length(ages))
+    # One value per year, filled in as the cohort ages. The trace keeps the
+    # cohort of every year, a row per age.
+    n.years <- length(ages)
+    costs <- numeric(n.years)
+    qalys <- numeric(n.years)
+    at.risk <- numeric(n.years)
+    with.lesion <- numeric(n.years)
+    new.early <- numeric(n.years)
+    new.late <- numeric(n.years)
+    trace <- matrix(NA_real_, nrow = n.years, ncol = length(MODEL.STATES),
+                    dimnames = list(as.character(ages), MODEL.STATES))
 
     for (i in seq_along(ages)) {
       age <- ages[i]
       p <- parameters.at.age(pars, age)
-      cycle.cost <- 0
-      cycle.disutility <- 0
-      screen.early <- 0
-      screen.late <- 0
+
+      # ---- 1. Screening round, in the years the strategy has one ------------
+      # It happens at the start of the year. It costs the tests, the procedures
+      # and the removals, and a procedure can cause a complication, which costs
+      # money and takes away some quality of life.
+      screening.cost <- 0
+      screening.disutility <- 0
+      found.early <- 0
+      found.late <- 0
 
       if (age %in% schedule$ages) {
-        sc <- apply.screening(cohort, schedule$modality, p)
-        cohort <- sc$cohort
-        cycle.cost <- cycle.cost +
-          sc$n.tests * p$cost.test +
-          sc$n.procedures * p$cost.procedure +
-          sc$n.removals * p$cost.removal +
-          sc$n.procedures * p$p.procedure.complication * p$cost.complication
-        cycle.disutility <- cycle.disutility +
-          sc$n.procedures * p$p.procedure.complication * p$disutility.complication
-        screen.early <- sc$found.early
-        screen.late <- sc$found.late
+        round <- apply.screening(cohort, schedule$modality, p)
+        cohort <- round$cohort
+        found.early <- round$found.early
+        found.late <- round$found.late
+
+        complications <- round$n.procedures * p$p.procedure.complication
+        screening.cost <- round$n.tests * p$cost.test +
+          round$n.procedures * p$cost.procedure +
+          round$n.removals * p$cost.removal +
+          complications * p$cost.complication
+        screening.disutility <- complications * p$disutility.complication
       }
 
       trace[i, ] <- cohort
 
-      state.costs <- rep(0, n.states)
-      state.costs[S.CE] <- p$cost.treatment.early
-      state.costs[S.CL] <- p$cost.treatment.late
-      state.costs[S.SURV] <- p$cost.followup
+      # ---- 2. Costs and health of this year ---------------------------------
+      # What a person in each state costs in a year, and the quality of life of
+      # that year: 1 is a year in full health and 0 is being dead. A lesion or
+      # a preclinical cancer is not felt, so it counts as full health.
+      state.costs <- per.state()
+      state.costs['clin.early'] <- p$cost.treatment.early
+      state.costs['clin.late'] <- p$cost.treatment.late
+      state.costs['survivor'] <- p$cost.followup
 
-      state.utilities <- rep(0, n.states)
-      state.utilities[c(S.NORMAL, S.LGL, S.HGL, S.FPL,
-                        S.PE.SLOW, S.PL.SLOW, S.PE.FAST, S.PL.FAST)] <- 1
-      state.utilities[S.CE] <- p$utility.cancer.early
-      state.utilities[S.CL] <- p$utility.cancer.late
-      state.utilities[S.SURV] <- p$utility.survivor
+      state.utilities <- per.state()
+      state.utilities[AT.RISK] <- 1
+      state.utilities['clin.early'] <- p$utility.cancer.early
+      state.utilities['clin.late'] <- p$utility.cancer.late
+      state.utilities['survivor'] <- p$utility.survivor
 
-      df <- 1 / (1 + discount)^(age - MODEL.AGE.START)
-      costs[i] <- (sum(state.costs * cohort) + cycle.cost) * df
-      qalys[i] <- (sum(state.utilities * cohort) - cycle.disutility) * df
+      # Each state contributes in proportion to the share of the cohort in it.
+      # Money and health count for less the further in the future they are,
+      # which is what discounting expresses: at a rate of 3%, what happens a
+      # year from now is worth 1 / 1.03 of the same today.
+      discount.factor <- 1 / (1 + discount)^(age - MODEL.AGE.START)
+      costs[i] <- (sum(state.costs * cohort) + screening.cost) * discount.factor
+      qalys[i] <- (sum(state.utilities * cohort) - screening.disutility) * discount.factor
 
+      # ---- 3. What is measured this year ------------------------------------
+      # New diagnoses, as a cancer registry counts them: those that surface
+      # through symptoms during the year plus those the screening round found.
       tp <- transition.matrix(age, p)
+      new.early[i] <- cohort[['pre.early.slow']] * tp['pre.early.slow', 'clin.early'] +
+                      cohort[['pre.early.fast']] * tp['pre.early.fast', 'clin.early'] +
+                      found.early
+      new.late[i] <- cohort[['pre.late.slow']] * tp['pre.late.slow', 'clin.late'] +
+                     cohort[['pre.late.fast']] * tp['pre.late.fast', 'clin.late'] +
+                     found.late
+      at.risk[i] <- sum(cohort[AT.RISK])
+      with.lesion[i] <- sum(cohort[LESION])
 
-      # Registry incidence counts every cancer diagnosed during the cycle,
-      # whether it surfaced through symptoms or was found by screening.
-      new.early[i] <- cohort[S.PE.SLOW] * tp[S.PE.SLOW, S.CE] +
-                      cohort[S.PE.FAST] * tp[S.PE.FAST, S.CE] + screen.early
-      new.late[i] <- cohort[S.PL.SLOW] * tp[S.PL.SLOW, S.CL] +
-                     cohort[S.PL.FAST] * tp[S.PL.FAST, S.CL] + screen.late
-      at.risk[i] <- sum(cohort[S.AT.RISK])
-      lesion.prevalence[i] <- sum(cohort[S.LESION])
-
-      cohort <- as.numeric(cohort %*% tp)
+      # ---- 4. Move the cohort one year forward ------------------------------
+      # Multiplying the shares by the matrix sends each share to where its row
+      # says, which gives the shares at the start of next year.
+      cohort <- drop(cohort %*% tp)
     }
 
-    strata.of.age <- sapply(ages, stratum.of.age)
-    incidence <- tapply(seq_along(ages), factor(strata.of.age, levels = MODEL.STRATA),
-                        function(idx) {
-                          denom <- at.risk[idx]
-                          mean(ifelse(denom > 1e-12, (new.early[idx] + new.late[idx]) / denom, 0))
-                        })
-    prevalence <- tapply(seq_along(ages), factor(strata.of.age, levels = MODEL.STRATA),
-                         function(idx) {
-                           denom <- at.risk[idx]
-                           mean(ifelse(denom > 1e-12, lesion.prevalence[idx] / denom, 0))
-                         })
-    late.share <- tapply(seq_along(ages), factor(strata.of.age, levels = MODEL.STRATA),
-                         function(idx) {
-                           total <- sum(new.early[idx] + new.late[idx])
-                           if (total > 1e-12) sum(new.late[idx]) / total else 0
-                         })
+    # ---- Results of the strategy ----------------------------------------------
+    # C is the discounted cost and E the discounted quality-adjusted life years
+    # (QALYs), both per person and added up over the whole horizon.
+    summary <- rbind(summary, data.frame(strategy = strategy,
+                                         C = sum(costs),
+                                         E = sum(qalys)))
+
+    # The outputs a calibration compares with observed data, per stratum.
+    # Incidence and prevalence are yearly rates over the people at risk,
+    # averaged over the years of the stratum. The late-stage share is the part
+    # of the cancers diagnosed in the stratum that were already advanced.
+    stratum <- factor(sapply(ages, stratum.of.age), levels = MODEL.STRATA)
+    anyone.at.risk <- at.risk > 1e-12
+    yearly.incidence <- ifelse(anyone.at.risk, (new.early + new.late) / at.risk, 0)
+    yearly.prevalence <- ifelse(anyone.at.risk, with.lesion / at.risk, 0)
+
+    diagnosed <- tapply(new.early + new.late, stratum, sum)
+    diagnosed.late <- tapply(new.late, stratum, sum)
+    late.share <- ifelse(diagnosed > 1e-12, diagnosed.late / diagnosed, 0)
 
     outputs[[strategy]] <- list(
-      `Cancer incidence` = setNames(as.numeric(incidence), MODEL.STRATA),
-      `Lesion prevalence` = setNames(as.numeric(prevalence), MODEL.STRATA),
+      `Cancer incidence` = setNames(as.numeric(tapply(yearly.incidence, stratum, mean)), MODEL.STRATA),
+      `Lesion prevalence` = setNames(as.numeric(tapply(yearly.prevalence, stratum, mean)), MODEL.STRATA),
       `Late-stage share` = setNames(as.numeric(late.share), MODEL.STRATA)
     )
-    cohort.states[[strategy]] <- trace
-
-    summary.df <- rbind(summary.df, data.frame(
-      strategy = strategy,
-      C = sum(costs),
-      E = sum(qalys)
-    ))
+    cohort.info[[strategy]] <- trace
   }
 
-  return(list(
-    summary = summary.df,
-    outputs = outputs,
-    incidence = lapply(outputs, function(o) o$`Cancer incidence`),
-    cohort.info = cohort.states
-  ))
+  list(summary = summary,
+       outputs = outputs,
+       incidence = lapply(outputs, function(o) o$`Cancer incidence`),
+       cohort.info = cohort.info)
 }
