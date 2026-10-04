@@ -1,21 +1,3 @@
-> # ⚠️ DEMONSTRATION MODEL ONLY — NOT A SOURCE OF TRUTH ⚠️
->
-> **This model exists solely as a test bed for calibration algorithms.**
->
-> The structure, the parameter values, the costs, the utilities, the calibration
-> targets and every result produced here are **illustrative and largely invented**.
-> They are *not* derived from a systematic review of the evidence, they have not
-> been validated against any real population, and they have not been reviewed by
-> anyone clinically or economically.
->
-> **Nothing shown in this app may be used, cited or quoted as evidence about the
-> cost-effectiveness of cancer screening**, or to inform any clinical,
-> policy, funding or purchasing decision. Any ICER, life-year, QALY, cost or
-> survival figure it reports is a number that came out of a toy model and means
-> nothing outside of it.
-
----
-
 # Two-pathway cancer screening model
 
 A cost-effectiveness model of screening for a generic cancer, built as a harder
