@@ -315,10 +315,11 @@ get.model.states <- function() {
 
 get.code.sample <- function() {
   # Code shown in the Code panel of the Overview tab, one tab per entry, for
-  # whoever wants to see how the model works. The whole of model.R is written to
-  # be read, so it is shown as it is.
+  # whoever wants to see how the model works. model.R holds the logic of the
+  # model and comes first; model_helpers.R holds the bookkeeping it relies on.
   return(list(
-    `model.R`=paste(readLines('model.R'), collapse='\n')
+    `model.R`=paste(readLines('model.R'), collapse='\n'),
+    `model_helpers.R`=paste(readLines('model_helpers.R'), collapse='\n')
   ))
 }
 

@@ -20,19 +20,18 @@
 # lesions before they turn into cancer, and it finds cancers while they are
 # still localized and easier to cure.
 #
-# The file reads top to bottom: the states, the parameters, the yearly
-# transitions, what a screening round does, and simulate(), which puts them
-# together.
+# The file reads top to bottom: the states, the yearly transitions, what a
+# screening round does, and simulate(), which puts them together. Bookkeeping
+# that is not needed to follow the model, such as reading a parameter's value at
+# an age or summarizing results per age group, is in model_helpers.R.
+
+source('model_helpers.R')
 
 
 # ---- States ---------------------------------------------------------------------
 
 MODEL.AGE.START <- 20
 MODEL.AGE.END <- 89
-
-# Results by age are reported per ten-year age group, the strata of the model.
-MODEL.STRATA <- c('20-29', '30-39', '40-49', '50-59', '60-69', '70-79', '80-89')
-STRATUM.SIZE <- 10
 
 # Each pathway has preclinical states of its own because its cancers behave
 # differently: those of the fast pathway advance sooner and take longer to give
@@ -63,9 +62,6 @@ ALIVE <- setdiff(MODEL.STATES, DEAD)
 # prevalence are measured over them.
 AT.RISK <- c('normal', LESION, PRECLINICAL)
 
-# One value per state, all zero, to be filled in by name.
-per.state <- function() setNames(rep(0, length(MODEL.STATES)), MODEL.STATES)
-
 # The ages at which each strategy offers a screening round, and what with.
 SCREENING.SCHEDULES <- list(
   no_screening = list(modality = NULL, ages = integer(0)),
@@ -77,36 +73,6 @@ SCREENING.SCHEDULES <- list(
 # Seconds simulate() waits before it starts. The model runs in milliseconds, and
 # the wait makes it behave like the slow models it stands in for. 0 disables it.
 MODEL.SIMULATION.DELAY <- 0
-
-
-# ---- Parameters -----------------------------------------------------------------
-
-# The position of the stratum an age falls in.
-stratum.index <- function(age) {
-  min(length(MODEL.STRATA), max(1, (age - MODEL.AGE.START) %/% STRATUM.SIZE + 1))
-}
-
-stratum.of.age <- function(age) {
-  MODEL.STRATA[stratum.index(age)]
-}
-
-# A parameter is either one number for every age or one value per stratum.
-# This gives the value that applies at an age, whichever of the two it is.
-par.at.age <- function(value, age) {
-  if (!is.list(value) && length(value) == 1) return(as.numeric(value))
-
-  stratum <- stratum.of.age(age)
-  if (stratum %in% names(value)) return(as.numeric(value[[stratum]]))
-
-  # Values without stratum names are taken in the order of the strata.
-  as.numeric(value[[min(length(value), stratum.index(age))]])
-}
-
-# Every parameter, as the plain number it is worth at an age. The rest of the
-# model works on these and never has to think about strata.
-parameters.at.age <- function(pars, age) {
-  lapply(pars, par.at.age, age = age)
-}
 
 
 # ---- One year of natural history ------------------------------------------------
@@ -373,24 +339,9 @@ simulate <- function(strategies, pars, delay = MODEL.SIMULATION.DELAY) {
                                          C = sum(costs),
                                          E = sum(qalys)))
 
-    # The outputs a calibration compares with observed data, per stratum.
-    # Incidence and prevalence are yearly rates over the people at risk,
-    # averaged over the years of the stratum. The late-stage share is the part
-    # of the cancers diagnosed in the stratum that were already advanced.
-    stratum <- factor(sapply(ages, stratum.of.age), levels = MODEL.STRATA)
-    anyone.at.risk <- at.risk > 1e-12
-    yearly.incidence <- ifelse(anyone.at.risk, (new.early + new.late) / at.risk, 0)
-    yearly.prevalence <- ifelse(anyone.at.risk, with.lesion / at.risk, 0)
-
-    diagnosed <- tapply(new.early + new.late, stratum, sum)
-    diagnosed.late <- tapply(new.late, stratum, sum)
-    late.share <- ifelse(diagnosed > 1e-12, diagnosed.late / diagnosed, 0)
-
-    outputs[[strategy]] <- list(
-      `Cancer incidence` = setNames(as.numeric(tapply(yearly.incidence, stratum, mean)), MODEL.STRATA),
-      `Lesion prevalence` = setNames(as.numeric(tapply(yearly.prevalence, stratum, mean)), MODEL.STRATA),
-      `Late-stage share` = setNames(as.numeric(late.share), MODEL.STRATA)
-    )
+    # The outputs a calibration compares with observed data, per age group.
+    outputs[[strategy]] <- calibration.outputs(ages, new.early, new.late,
+                                               at.risk, with.lesion)
     cohort.info[[strategy]] <- trace
   }
 
