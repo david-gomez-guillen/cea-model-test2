@@ -9,22 +9,61 @@ get.overview <- function() {
   return(paste(readLines('overview.md'), collapse='\n'))
 }
 
-# Grouped by screening modality: the app reads a named list of entries as the
-# headings the strategies hang from (see normalize.strategies() in shiny-cea).
-# The name is still what run.simulation() is given, so grouping changes nothing
-# but how the strategies are shown.
+# Grouped by screening modality: each group entry is a heading the strategies
+# hang from (see normalize.strategies() in shiny-cea), and gives them the
+# attributes they share. The name is still what run.simulation() is given, so
+# grouping changes nothing but how the strategies are shown.
+#
+# The descriptions and attributes describe SCREENING.SCHEDULES and the screening
+# round in model.R, and must be kept in sync with them.
 get.strategies <- function() {
   return(list(
-    `No screening`=list(
-      list(name='no_screening', display.name='No screening')
+    list(
+      group='No screening',
+      attributes=list(modality='None'),
+      strategies=list(
+        list(name='no_screening', display.name='No screening',
+             description='Natural history only: cancers are diagnosed when they cause symptoms. The reference strategy, and the one the calibration is run on.')
+      )
     ),
-    Test=list(
-      list(name='test_biennial', display.name='Biennial test, 50-74')
+    list(
+      group='Test',
+      attributes=list(modality='Test'),
+      strategies=list(
+        list(name='test_biennial', display.name='Biennial test, 50-74',
+             description='Non-invasive screening test every two years from 50 to 74. Those who test positive, false positives included, go on to the procedure, which removes the lesions it finds.',
+             attributes=list(interval='2 years', start.age=50, end.age=74, rounds=13))
+      )
     ),
-    Procedure=list(
-      list(name='procedure_10y', display.name='Procedure every 10 years, 50-79'),
-      list(name='procedure_45', display.name='Procedure every 10 years, 45-79')
+    list(
+      group='Procedure',
+      attributes=list(modality='Procedure', interval='10 years'),
+      strategies=list(
+        list(name='procedure_10y', display.name='Procedure every 10 years, 50-79',
+             description='Procedure every ten years from 50 to 79 (at 50, 60 and 70). It removes the lesions it finds and carries a risk of a serious complication.',
+             attributes=list(start.age=50, end.age=79, rounds=3)),
+        list(name='procedure_45', display.name='Procedure every 10 years, 45-79',
+             description='The ten-yearly procedure starting at 45 instead of 50 (at 45, 55, 65 and 75).',
+             attributes=list(start.age=45, end.age=79, rounds=4))
+      )
     )
+  ))
+}
+
+get.strategy.attributes <- function() {
+  # What describes the strategies, shown as columns of the Strategies tab. The
+  # modality is drawn as the shape of the point on the base case plot and the
+  # starting age as its fill, which is what tells the two procedures apart.
+  return(list(
+    modality=list(
+      label='Screening modality',
+      plot='shape',
+      values=c(None='diamond', Test='circle', Procedure='square')
+    ),
+    start.age=list(label='Starting age', plot='fill', ordered=TRUE),
+    end.age='Last age',
+    interval='Interval',
+    rounds='Screening rounds'
   ))
 }
 
