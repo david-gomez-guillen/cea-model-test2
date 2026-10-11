@@ -530,7 +530,7 @@ get.calibration.schemes <- function() {
       initial_guess=initial.guess.for(CALIB.PARAMS.FULL),
       error_function=calibration.error,
       latent_space_training_set=generate.training.dataset,
-      other.plots=list(plot.pathway.split)
+      evaluation.plots=list(`Lesion onset by age`=plot.pathway.split)
     ),
     constrained=list(
       description=CALIB.DESCRIPTION.CONSTRAINED,
@@ -542,7 +542,7 @@ get.calibration.schemes <- function() {
       constraints=calibration.constraints,
       constraints_description=calibration.constraints.llm,
       latent_space_training_set=generate.constrained.training.dataset,
-      other.plots=list(plot.pathway.split)
+      evaluation.plots=list(`Lesion onset by age`=plot.pathway.split)
     )
   ))
 }
