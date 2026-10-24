@@ -529,6 +529,7 @@ get.calibration.schemes <- function() {
       strata=CALIB.STRATA,
       initial_guess=initial.guess.for(CALIB.PARAMS.FULL),
       error_function=calibration.error,
+      output_error=calibration.output.error,
       latent_space_training_set=generate.training.dataset,
       evaluation.plots=list(`Lesion onset by age`=plot.pathway.split)
     ),
@@ -539,6 +540,7 @@ get.calibration.schemes <- function() {
       strata=CALIB.STRATA,
       initial_guess=initial.guess.for(CALIB.PARAMS.FULL),
       error_function=calibration.error,
+      output_error=calibration.output.error,
       constraints=calibration.constraints,
       constraints_description=calibration.constraints.llm,
       latent_space_training_set=generate.constrained.training.dataset,
@@ -617,25 +619,16 @@ calibration.constraints.llm <- function() {
   )
 }
 
-# Relative squared error, averaged within each target series and summed over
-# series. Series are on very different scales (incidence is per mil, the stage
-# distribution is a proportion), so the error has to be scale free for all three
-# to matter.
 calibration.error <- function(pars, target) {
   calibration.strategy <- 'no_screening'
   result <- tryCatch({
     results <- run.simulation(calibration.strategy, pars)
     simulated <- results$outputs[[calibration.strategy]]
 
-    error <- 0
     output <- list()
-    for (series in names(target)) {
-      target.values <- unlist(target[[series]])
-      simulated.values <- simulated[[series]][names(target.values)]
-      error <- error + mean(((simulated.values - target.values) / target.values)^2)
-      output[[series]] <- simulated.values
-    }
-    list(error=error, output=output)
+    for (series in names(target))
+      output[[series]] <- simulated[[series]][names(unlist(target[[series]]))]
+    list(error=calibration.output.error(output, target), output=output)
   }, error=function(e) {
     output <- lapply(target, function(series) {
       values <- rep(NA_real_, length(series))
@@ -645,6 +638,21 @@ calibration.error <- function(pars, target) {
     list(error=Inf, output=output)
   })
   return(result)
+}
+
+# The error of a simulated output against the target, without running the
+# model: the output_error of both schemes, and what calibration.error() scores
+# its own output by. Relative squared error, averaged within each target series
+# and summed over series. Series are on very different scales (incidence is per
+# mil, the stage distribution is a proportion), so the error has to be scale
+# free for all three to matter.
+calibration.output.error <- function(output, target) {
+  error <- 0
+  for (series in names(target)) {
+    target.values <- unlist(target[[series]])
+    error <- error + mean(((output[[series]][names(target.values)] - target.values) / target.values)^2)
+  }
+  error
 }
 
 # Training set for the latent space methods: the initial guess scaled by a
@@ -727,15 +735,12 @@ plot.pathway.split <- function(data) {
   plt.df$text <- sprintf('%s\n%s: %s', plt.df$stratum, plt.df$parameter,
                          vapply(plt.df$value, label, character(1)))
 
-  # The legend goes on top: ggplotly puts a bottom legend at a fixed fraction of
-  # the plot height, which on a plot this short lands on the x axis title.
   plt <- ggplot(plt.df, aes(x=stratum, y=value, group=parameter, colour=parameter,
                             text=text)) +
     geom_point() +
     geom_line() +
     labs(x='Age group', y='Annual probability of lesion onset', colour='') +
-    theme_minimal() +
-    theme(legend.position='top')
+    theme_minimal()
   return(plt)
 }
 
