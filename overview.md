@@ -1,10 +1,10 @@
 # Two-pathway cancer screening model
 
-Source: [github.com/david-gomez-guillen/cea-model-test2](https://github.com/david-gomez-guillen/cea-model-test2)
+Source: <a href="https://github.com/david-gomez-guillen/cea-model-test2" target="_blank" rel="noopener">github.com/david-gomez-guillen/cea-model-test2</a>
 
 A cost-effectiveness model of screening for a generic cancer, built as a harder
 THALASSA calibration test bed than
-[`cea-model-test`](https://github.com/david-gomez-guillen/cea-model-test). Cancer arises through **two parallel
+<a href="https://github.com/david-gomez-guillen/cea-model-test" target="_blank" rel="noopener"><code>cea-model-test</code></a>. Cancer arises through **two parallel
 routes**, which is what makes the model difficult to calibrate: the targets constrain the *sum* of what the two
 routes produce much better than they constrain the *split* between them, so the
 error surface has several distinct local minima instead of one basin.
