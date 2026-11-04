@@ -451,10 +451,44 @@ get.code.sample <- function() {
   ))
 }
 
-run.simulation <- function(strategies, pars) {
+run.simulation <- function(strategies, pars, make.plots=FALSE) {
   # simulate() takes the parameters as the named list the app already builds,
   # and copes with any of them arriving as one value per stratum.
-  return(simulate(strategies, pars))
+  results <- simulate(strategies, pars)
+  # The plots of the Base case tab, which only it asks for: every other
+  # analysis runs without spending time on them.
+  if (make.plots) results$plots <- simulation.plots(results)
+  return(results)
+}
+
+# The plots of each strategy, out of what simulate() returned, each under the
+# title of its tab in the Base case tab. A plot is either a numeric vector, its
+# names being the x axis, or a data frame whose first column is the x axis and
+# whose other columns are a line each.
+simulation.plots <- function(results) {
+  plots <- list()
+  for (strategy in names(results$cohort.info)) {
+    # A row per year of age, the cohort at its start, after any screening round.
+    trace <- results$cohort.info[[strategy]]
+    ages <- as.numeric(rownames(trace))
+    at.risk <- rowSums(trace[, AT.RISK, drop=FALSE])
+    lesion.share <- function(state) ifelse(at.risk > 1e-12, trace[, state] / at.risk, 0)
+
+    plots[[strategy]] <- list(
+      # By age group, with the strata as labels of the x axis.
+      `Cancer incidence per 100,000`=results$outputs[[strategy]]$`Cancer incidence` * 1e5,
+      # By year of age, with the ages as the names.
+      `Cumulative cancer deaths per 100,000`=setNames(trace[, 'dead.cancer'] * 1e5, ages),
+      # A line per kind of lesion, among the people never diagnosed with cancer.
+      # Screening removes the lesions it finds, which is where it pays off.
+      `Lesion prevalence`=data.frame(Age=ages,
+                                     `Low-grade`=lesion.share('lgl'),
+                                     `High-grade`=lesion.share('hgl'),
+                                     `Fast pathway`=lesion.share('fpl'),
+                                     check.names=FALSE)
+    )
+  }
+  plots
 }
 
 # Strata used for calibration: all of them.
